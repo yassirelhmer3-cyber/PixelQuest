@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 
 const client = new Client({
     intents: [
@@ -117,7 +117,42 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // 4️⃣ أمر المساعدة (!help)
+    // 4️⃣ أمر إضافة نقاط للـ Owners/Admins (!addxp)
+    if (command === 'addxp') {
+        // التأكد من صلاحيات الآدمن
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return message.reply('❌ هذا الأمر مخصص للإدارة فقط!');
+        }
+
+        const targetMember = message.mentions.members.first();
+        const amount = parseInt(args[1]);
+
+        if (!targetMember || isNaN(amount)) {
+            return message.reply('❌ طريقة الاستخدام الخاطئة! استخدم: `!addxp @member 100`');
+        }
+
+        const targetUser = getUser(targetMember.id);
+        targetUser.xp += amount;
+
+        // التحقق مما إذا ارتفع مستواه بعد إضافة النقاط
+        let xpNeeded = targetUser.level * 30;
+        let leveledUp = false;
+
+        while (targetUser.xp >= xpNeeded) {
+            targetUser.xp -= xpNeeded;
+            targetUser.level += 1;
+            xpNeeded = targetUser.level * 30;
+            leveledUp = true;
+        }
+
+        if (leveledUp) {
+            return message.reply(`✅ تم إعطاء **${amount} XP** لـ ${targetMember}! وارتفع مستواه تلقائياً إلى **Level ${targetUser.level}** (${getTitle(targetUser.level)}) 🎉`);
+        }
+
+        return message.reply(`✅ تم إضافة **${amount} XP** للحساب المباشر لـ ${targetMember} بنجاح!`);
+    }
+
+    // 5️⃣ أمر المساعدة (!help)
     if (command === 'help') {
         const embed = new EmbedBuilder()
             .setTitle('📜 قائمة أوامر PixelQuest')
@@ -125,7 +160,8 @@ client.on('messageCreate', async (message) => {
             .addFields(
                 { name: '`!profile`', value: 'عرض مستواك الحالي ورتبتك والـ XP.' },
                 { name: '`!type`', value: 'بدء لعبة كتابة سريعة لكسب الـ XP.' },
-                { name: '`!top`', value: 'عرض قائمة أفضل 10 لاعبين في السيرفر.' }
+                { name: '`!top`', value: 'عرض قائمة أفضل 10 لاعبين في السيرفر.' },
+                { name: '`!addxp @user amount`', value: 'أمر للإدارة فقط لإعطاء نقاط لأي عضو.' }
             )
             .setColor('#3498DB');
 
