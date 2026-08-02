@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 
 const client = new Client({
     intents: [
@@ -58,6 +58,7 @@ client.on('ready', () => {
 });
 
 let activeGame = null; // { type: 'type'|'math'|'scramble', answer: string, channelId: string }
+let awaitingPasswordUser = null; // مخصص لحفظ حالة طلب كلمة سر !setup
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.content.startsWith('!')) return;
@@ -65,6 +66,18 @@ client.on('messageCreate', async (message) => {
     const args = message.content.slice(1).trim().split(/ +/);
     const command = args.shift().toLowerCase();
     const user = getUser(message.author.id);
+
+    // ==========================================
+    // 🛠️ جزئية إعادة بناء وتنسيق السيرفر (!setup)
+    // ==========================================
+    if (command === 'setup') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return message.reply('❌ هذا الأمر مخصص لإدارة السيرفر والـ Owners فقط!');
+        }
+
+        awaitingPasswordUser = message.author.id;
+        return message.reply('🔒 **هذا الأمر حساس ومحمي بكلمة سر!**\nيرجى كتابة كلمة السر الآن لتأكيد مسح وتنسيق السيرفر (لديك 30 ثانية).');
+    }
 
     // ==========================================
     // 👤 1. أوامر الأعضاء (Member Commands)
@@ -227,8 +240,9 @@ client.on('messageCreate', async (message) => {
 
         const embed = new EmbedBuilder()
             .setTitle('👑 قائمة أوامر الإدارة والـ Owners')
-            .setDescription('أوامر خاصة بالتحكم بالنظام والمستويات:')
+            .setDescription('أوامر خاصة بالتحكم بالنظام والمستويات وإعادة البناء:')
             .addFields(
+                { name: '`!setup`', value: 'إعادة تنسيق السيرفر كلياً (محمي بكلمة سر).' },
                 { name: '`!addxp @user amount`', value: 'إضافة نقاط XP محددة للـ User.' },
                 { name: '`!removexp @user amount`', value: 'خصم نقاط XP من الـ User.' },
                 { name: '`!setlevel @user level`', value: 'تعيين مستوى الـ User مباشرة.' }
@@ -289,9 +303,70 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// 💬 احتساب النقاط من الشات والتحقق من إجابات الألعاب
+// 💬 احتساب النقاط + التحقق من كلمة سر Setup + التحقق من إجابات الألعاب
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
+
+    // 🔐 التحقق من كلمة السر لأمر Setup
+    if (awaitingPasswordUser && message.author.id === awaitingPasswordUser) {
+        if (message.content.trim() === 'yassir') {
+            awaitingPasswordUser = null;
+            const guild = message.guild;
+
+            await message.reply('🔓 **كلمة السر صحيحة! جاري بناء السيرفر وإعادة تنسيقه بالكامل...**');
+
+            try {
+                // 1️⃣ مسح القنوات القديمة
+                const channels = await guild.channels.fetch();
+                for (const [id, channel] of channels) {
+                    if (channel) await channel.delete().catch(() => {});
+                }
+
+                // 2️⃣ إنشاء الرتب
+                await guild.roles.create({ name: '👑 ｜ Owner / Founder', color: '#E74C3C', permissions: [PermissionFlagsBits.Administrator] });
+                await guild.roles.create({ name: '⚙️ ｜ Co-Owner', color: '#C0392B', permissions: [PermissionFlagsBits.Administrator] });
+                await guild.roles.create({ name: '🛡️ ｜ Admin', color: '#E67E22' });
+                await guild.roles.create({ name: '⚔️ ｜ Moderator', color: '#F39C12' });
+                await guild.roles.create({ name: '🔨 ｜ Support / Helper', color: '#F1C40F' });
+                await guild.roles.create({ name: '🚀 ｜ Server Booster', color: '#F472B6' });
+                await guild.roles.create({ name: '💎 ｜ VIP Member', color: '#9B59B6' });
+                await guild.roles.create({ name: '🎮 ｜ Member', color: '#3498DB' });
+
+                // 3️⃣ بناء الفئات والقنوات المنظمة
+                const catInfo = await guild.channels.create({ name: '📌 ｜ WELCOME & INFO', type: ChannelType.GuildCategory });
+                await guild.channels.create({ name: '👋-welcome', type: ChannelType.GuildText, parent: catInfo.id });
+                await guild.channels.create({ name: '📜-rules', type: ChannelType.GuildText, parent: catInfo.id });
+                await guild.channels.create({ name: '📢-announcements', type: ChannelType.GuildText, parent: catInfo.id });
+
+                const catChat = await guild.channels.create({ name: '💬 ｜ COMMUNITY CHAT', type: ChannelType.GuildCategory });
+                const mainChat = await guild.channels.create({ name: '💬-general-chat', type: ChannelType.GuildText, parent: catChat.id });
+                await guild.channels.create({ name: '🤖-bot-commands', type: ChannelType.GuildText, parent: catChat.id });
+                await guild.channels.create({ name: '📸-media', type: ChannelType.GuildText, parent: catChat.id });
+
+                const catGames = await guild.channels.create({ name: '🎮 ｜ MINI GAMES & FUN', type: ChannelType.GuildCategory });
+                await guild.channels.create({ name: '⚡-fast-type', type: ChannelType.GuildText, parent: catGames.id });
+                await guild.channels.create({ name: '🏆-leaderboard', type: ChannelType.GuildText, parent: catGames.id });
+
+                const catVoice = await guild.channels.create({ name: '🔊 ｜ VOICE CHANNELS', type: ChannelType.GuildCategory });
+                await guild.channels.create({ name: '🔊 ｜ Lounge #1', type: ChannelType.GuildVoice, parent: catVoice.id });
+                await guild.channels.create({ name: '🎮 ｜ Gaming Voice #1', type: ChannelType.GuildVoice, parent: catVoice.id });
+
+                const embed = new EmbedBuilder()
+                    .setTitle('🎉 تم بناء وتنسيق السيرفر بنجاح!')
+                    .setDescription('السيرفر جاهز الآن ومُنظّم بالكامل! 🚀')
+                    .setColor('#2ECC71');
+
+                await mainChat.send({ embeds: [embed] });
+
+            } catch (error) {
+                console.error('حدث خطأ أثناء Setup:', error);
+            }
+            return;
+        } else {
+            awaitingPasswordUser = null;
+            return message.reply('❌ **كلمة السر خاطئة!** تم إلغاء عملية إعادة بناء السيرفر.');
+        }
+    }
 
     // نقاط الشات التلقائية
     if (!message.content.startsWith('!')) {
